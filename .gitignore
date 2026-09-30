@@ -1,0 +1,15 @@
+# KLayout / generated layout files
+*.bak
+*.log
+*.l2n
+*.rdb
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*~

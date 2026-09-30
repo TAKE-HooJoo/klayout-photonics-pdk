@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description>Silicon Photonics PDK v4 - routing and port connection helpers</description>
+ <version>4.0</version><category>pymacros</category><prolog/><epilog/><doc/>
+ <autorun>true</autorun><autorun-early>false</autorun-early><shortcut/>
+ <show-in-menu>false</show-in-menu><group-name/><menu-path/>
+ <interpreter>python</interpreter><dsl-interpreter-name/>
+ <text># Photonics PDK v3 for KLayout 0.30.x
+# Smooth routing-oriented PCells with optical pins.
+import pya
+import math
+
+WG_LAYER  = pya.LayerInfo(1, 0)
+PIN_LAYER = pya.LayerInfo(2, 0)
+
+def q(v, dbu):
+    return int(round(v/dbu))
+
+def path_um(points, width, dbu):
+    return pya.Path([pya.Point(q(x,dbu), q(y,dbu)) for x,y in points], q(width,dbu))
+
+def bezier(p0,p1,p2,p3,n=64):
+    out=[]
+    for i in range(n+1):
+        t=i/float(n); u=1.0-t
+        x=u**3*p0[0]+3*u*u*t*p1[0]+3*u*t*t*p2[0]+t**3*p3[0]
+        y=u**3*p0[1]+3*u*u*t*p1[1]+3*u*t*t*p2[1]+t**3*p3[1]
+        out.append((x,y))
+    return out
+
+def add_pin(cell, layout, layer, name, x, y, inward_angle, width, length=1.0):
+    a=math.radians(inward_angle)
+    p=[(x,y),(x+length*math.cos(a),y+length*math.sin(a))]
+    cell.shapes(layer).insert(path_um(p,width,layout.dbu))
+    cell.shapes(layer).insert(
+        pya.Text(name,pya.Trans(pya.Point(q(x,layout.dbu),q(y,layout.dbu))))
+    )
+
+class Base(pya.PCellDeclarationHelper):
+    def layers(self):
+        self.param("layer",self.TypeLayer,"Waveguide layer",default=WG_LAYER)
+        self.param("pin_layer",self.TypeLayer,"Optical pin layer",default=PIN_LAYER)
+
+class Straight(Base):
+    def __init__(self):
+        super(Straight,self).__init__()
+        self.param("length",self.TypeDouble,"Length (um)",default=100.0)
+        self.param("width",self.TypeDouble,"Width (um)",default=0.5); self.layers()
+    def produce_impl(self):
+        l,c=self.layout,self.cell; wg=l.layer(self.layer); pin=l.layer(self.pin_layer)
+        c.shapes(wg).insert(path_um([(0,0),(self.length,0)],self.width,l.dbu))
+        add_pin(c,l,pin,"opt1",0,0,0,self.width); add_pin(c,l,pin,"opt2",self.length,0,180,self.width)
+
+class Bend90(Base):
+    def __init__(self):
+        super(Bend90,self).__init__()
+        self.param("radius",self.TypeDouble,"Radius (um)",default=10.0)
+        self.param("width",self.TypeDouble,"Width (um)",default=0.5)
+        self.param("points",self.TypeInt,"Points",default=64); self.layers()
+    def produce_impl(self):
+        l,c=self.layout,self.cell; n=max(16,int(self.points))
+        pts=[(self.radius*math.sin(math.pi*i/(2*n)),
+              self.radius*(1-math.cos(math.pi*i/(2*n)))) for i in range(n+1)]
+        c.shapes(l.layer(self.layer)).insert(path_um(pts,self.width,l.dbu))
+        pin=l.layer(self.pin_layer)
+        add_pin(c,l,pin,"opt1",0,0,0,self.width); add_pin(c,l,pin,"opt2",self.radius,self.radius,270,self.width)
+
+class EulerBend(Base):
+    def __init__(self):
+        super(EulerBend,self).__init__()
+        self.param("radius",self.TypeDouble,"Footprint radius (um)",default=10.0)
+        self.param("width",self.TypeDouble,"Width (um)",default=0.5)
+        self.param("points",self.TypeInt,"Points",default=96); self.layers()
+    def produce_impl(self):
+        l,c=self.layout,self.cell; n=max(32,int(self.points))
+        x=y=th=0.0; raw=[(0.0,0.0)]; ds=1.0/n
+        for i in range(n):
+            u=(i+0.5)/n
+            k=4*u if u&lt;=0.5 else 4*(1-u)
+            th += (math.pi/2)*k*ds
+            x += math.cos(th)*ds; y += math.sin(th)*ds
+            raw.append((x,y))
+        sx=self.radius/raw[-1][0]; sy=self.radius/raw[-1][1]
+        pts=[(x*sx,y*sy) for x,y in raw]
+        c.shapes(l.layer(self.layer)).insert(path_um(pts,self.width,l.dbu))
+        pin=l.layer(self.pin_layer)
+        add_pin(c,l,pin,"opt1",0,0,0,self.width); add_pin(c,l,pin,"opt2",self.radius,self.radius,270,self.width)
+
+class SBend(Base):
+    def __init__(self):
+        super(SBend,self).__init__()
+        self.param("length",self.TypeDouble,"Length (um)",default=20.0)
+        self.param("offset",self.TypeDouble,"Vertical offset (um)",default=5.0)
+        self.param("width",self.TypeDouble,"Width (um)",default=0.5)
+        self.param("points",self.TypeInt,"Points",default=64); self.layers()
+    def produce_impl(self):
+        l,c=self.layout,self.cell
+        L=self.length; y=self.offset
+        pts=bezier((0,0),(L*0.35,0),(L*0.65,y),(L,y),max(16,int(self.points)))
+        c.shapes(l.layer(self.layer)).insert(path_um(pts,self.width,l.dbu))
+        pin=l.layer(self.pin_layer)
+        add_pin(c,l,pin,"opt1",0,0,0,self.width); add_pin(c,l,pin,"opt2",L,y,180,self.width)
+
+class Ring(Base):
+    def __init__(self):
+        super(Ring,self).__init__()
+        self.param("radius",self.TypeDouble,"Radius (um)",default=10.0)
+        self.param("width",self.TypeDouble,"Width (um)",default=0.5)
+        self.param("gap",self.TypeDouble,"Gap (um)",default=0.2)
+        self.param("bus_length",self.TypeDouble,"Bus length (um)",default=40.0)
+        self.param("points",self.TypeInt,"Points",default=128); self.layers()
+    def produce_impl(self):
+        l,c=self.layout,self.cell; wg=l.layer(self.layer); pin=l.layer(self.pin_layer)
+        c.shapes(wg).insert(path_um([(0,0),(self.bus_length,0)],self.width,l.dbu))
+        cx=self.bus_length/2; cy=self.radius+self.gap+self.width; n=max(48,int(self.points))
+        pts=[(cx+self.radius*math.cos(2*math.pi*i/n),cy+self.radius*math.sin(2*math.pi*i/n)) for i in range(n+1)]
+        c.shapes(wg).insert(path_um(pts,self.width,l.dbu))
+        add_pin(c,l,pin,"opt1",0,0,0,self.width); add_pin(c,l,pin,"opt2",self.bus_length,0,180,self.width)
+
+class DirectionalCoupler(Base):
+    def __init__(self):
+        super(DirectionalCoupler,self).__init__()
+        self.param("coupling_length",self.TypeDouble,"Coupling length (um)",default=20.0)
+        self.param("access_length",self.TypeDouble,"S-bend access length (um)",default=15.0)
+        self.param("gap",self.TypeDouble,"Gap (um)",default=0.2)
+        self.param("port_spacing",self.TypeDouble,"Port spacing (um)",default=5.0)
+        self.param("width",self.TypeDouble,"Width (um)",default=0.5); self.layers()
+    def produce_impl(self):
+        l,c=self.layout,self.cell; wg=l.layer(self.layer); pin=l.layer(self.pin_layer)
+        a=self.access_length; L=self.coupling_length; s=(self.gap+self.width)/2; p=self.port_spacing/2
+        top=bezier((0,p),(a*.35,p),(a*.65,s),(a,s),48)+[(a+L,s)]+bezier((a+L,s),(a+L+a*.35,s),(a+L+a*.65,p),(2*a+L,p),48)[1:]
+        bot=[(x,-y) for x,y in top]
+        c.shapes(wg).insert(path_um(top,self.width,l.dbu)); c.shapes(wg).insert(path_um(bot,self.width,l.dbu))
+        x=2*a+L
+        add_pin(c,l,pin,"opt1",0,p,0,self.width); add_pin(c,l,pin,"opt2",0,-p,0,self.width)
+        add_pin(c,l,pin,"opt3",x,p,180,self.width); add_pin(c,l,pin,"opt4",x,-p,180,self.width)
+
+class MMI1x2(Base):
+    def __init__(self):
+        super(MMI1x2,self).__init__()
+        self.param("wg_width",self.TypeDouble,"WG width (um)",default=0.5)
+        self.param("mmi_width",self.TypeDouble,"MMI width (um)",default=4.0)
+        self.param("mmi_length",self.TypeDouble,"MMI length (um)",default=20.0)
+        self.param("port_spacing",self.TypeDouble,"Output spacing (um)",default=2.0)
+        self.param("access_length",self.TypeDouble,"Access length (um)",default=5.0); self.layers()
+    def produce_impl(self):
+        l,c=self.layout,self.cell; wg=l.layer(self.layer); pin=l.layer(self.pin_layer); a=self.access_length; L=self.mmi_length; y=self.port_spacing/2
+        c.shapes(wg).insert(pya.Box(q(a,l.dbu),q(-self.mmi_width/2,l.dbu),q(a+L,l.dbu),q(self.mmi_width/2,l.dbu)))
+        c.shapes(wg).insert(path_um([(0,0),(a,0)],self.wg_width,l.dbu))
+        c.shapes(wg).insert(path_um([(a+L,y),(2*a+L,y)],self.wg_width,l.dbu))
+        c.shapes(wg).insert(path_um([(a+L,-y),(2*a+L,-y)],self.wg_width,l.dbu))
+        add_pin(c,l,pin,"opt1",0,0,0,self.wg_width); add_pin(c,l,pin,"opt2",2*a+L,y,180,self.wg_width); add_pin(c,l,pin,"opt3",2*a+L,-y,180,self.wg_width)
+
+class MZI(Base):
+    def __init__(self):
+        super(MZI,self).__init__()
+        self.param("mmi_width",self.TypeDouble,"MMI width (um)",default=4.0)
+        self.param("mmi_length",self.TypeDouble,"MMI length (um)",default=20.0)
+        self.param("access_length",self.TypeDouble,"MMI access (um)",default=5.0)
+        self.param("arm_length",self.TypeDouble,"Straight arm length (um)",default=80.0)
+        self.param("arm_spacing",self.TypeDouble,"Arm spacing (um)",default=10.0)
+        self.param("sbend_length",self.TypeDouble,"S-bend length (um)",default=20.0)
+        self.param("width",self.TypeDouble,"WG width (um)",default=0.5); self.layers()
+    def produce_impl(self):
+        l,c=self.layout,self.cell; wg=l.layer(self.layer); pin=l.layer(self.pin_layer)
+        a=self.access_length; m=self.mmi_length; s=self.arm_spacing/2; b=self.sbend_length; arm=self.arm_length
+        # input/output MMI bodies
+        c.shapes(wg).insert(path_um([(0,0),(a,0)],self.width,l.dbu))
+        c.shapes(wg).insert(pya.Box(q(a,l.dbu),q(-self.mmi_width/2,l.dbu),q(a+m,l.dbu),q(self.mmi_width/2,l.dbu)))
+        x0=a+m
+        # smooth separation, parallel arms, smooth recombination
+        upper=bezier((x0,1.0),(x0+b*.35,1.0),(x0+b*.65,s),(x0+b,s),48)
+        upper += [(x0+b+arm,s)]
+        upper += bezier((x0+b+arm,s),(x0+b+arm+b*.35,s),(x0+b+arm+b*.65,1.0),(x0+2*b+arm,1.0),48)[1:]
+        lower=[(x,-y) for x,y in upper]
+        c.shapes(wg).insert(path_um(upper,self.width,l.dbu)); c.shapes(wg).insert(path_um(lower,self.width,l.dbu))
+        x1=x0+2*b+arm
+        c.shapes(wg).insert(pya.Box(q(x1,l.dbu),q(-self.mmi_width/2,l.dbu),q(x1+m,l.dbu),q(self.mmi_width/2,l.dbu)))
+        xout=x1+m+a
+        c.shapes(wg).insert(path_um([(x1+m,0),(xout,0)],self.width,l.dbu))
+        add_pin(c,l,pin,"opt1",0,0,0,self.width); add_pin(c,l,pin,"opt2",xout,0,180,self.width)
+
+
+class WaveguideRoute(Base):
+    """Route between two points with an orthogonal, rounded-corner centerline."""
+    def __init__(self):
+        super(WaveguideRoute,self).__init__()
+        self.param("dx",self.TypeDouble,"Output X relative to input (um)",default=100.0)
+        self.param("dy",self.TypeDouble,"Output Y relative to input (um)",default=20.0)
+        self.param("width",self.TypeDouble,"Width (um)",default=0.5)
+        self.param("radius",self.TypeDouble,"Corner radius (um)",default=10.0)
+        self.param("points",self.TypeInt,"Points per corner",default=24)
+        self.layers()
+    def produce_impl(self):
+        l,c=self.layout,self.cell
+        wg=l.layer(self.layer); pin=l.layer(self.pin_layer)
+        dx,dy=self.dx,self.dy
+        # Smooth cubic S-route. End tangents are horizontal, so it connects
+        # naturally to east/west-facing optical ports.
+        ctrl=max(abs(dx)*0.35, min(abs(dx)/2.0, max(self.radius,1.0)))
+        sign=1 if dx &gt;= 0 else -1
+        p0=(0.0,0.0); p3=(dx,dy)
+        p1=(sign*ctrl,0.0); p2=(dx-sign*ctrl,dy)
+        pts=bezier(p0,p1,p2,p3,max(32,int(self.points)*2))
+        c.shapes(wg).insert(path_um(pts,self.width,l.dbu))
+        add_pin(c,l,pin,"opt1",0,0,0 if dx&gt;=0 else 180,self.width)
+        add_pin(c,l,pin,"opt2",dx,dy,180 if dx&gt;=0 else 0,self.width)
+
+class PortConnector(Base):
+    """Visible alignment helper: a short waveguide with two named optical ports."""
+    def __init__(self):
+        super(PortConnector,self).__init__()
+        self.param("length",self.TypeDouble,"Connector length (um)",default=10.0)
+        self.param("width",self.TypeDouble,"Width (um)",default=0.5)
+        self.layers()
+    def produce_impl(self):
+        l,c=self.layout,self.cell; wg=l.layer(self.layer); pin=l.layer(self.pin_layer)
+        c.shapes(wg).insert(path_um([(0,0),(self.length,0)],self.width,l.dbu))
+        add_pin(c,l,pin,"opt1",0,0,0,self.width)
+        add_pin(c,l,pin,"opt2",self.length,0,180,self.width)
+
+class PhotonicsLibrary(pya.Library):
+    def __init__(self):
+        self.description="Simple Silicon Photonics PCell Library v4"
+        z=self.layout()
+        for name,pc in [
+            ("Straight",Straight()),("Bend90",Bend90()),("EulerBend",EulerBend()),
+            ("SBend",SBend()),("Ring",Ring()),("DirectionalCoupler",DirectionalCoupler()),
+            ("MMI_1x2",MMI1x2()),("MZI",MZI()),("WaveguideRoute",WaveguideRoute()),("PortConnector",PortConnector())]:
+            z.register_pcell(name,pc)
+        self.register("Photonics")
+
+PhotonicsLibrary()
+</text>
+</klayout-macro>
