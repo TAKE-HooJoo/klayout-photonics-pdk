@@ -1,104 +1,71 @@
 # KLayout Silicon Photonics PDK
 
-Experimental silicon-photonics PCell library and interactive waveguide router for **KLayout 0.30.9**.
+[English](README_en.md)
 
-> Status: early development / geometry prototype. This is not a foundry-qualified photonics PDK.
+**KLayout 0.30.9** 向けのオープンソース Silicon Photonics PCell ライブラリと、対話型導波路ルーターです。
 
-## Current contents
+> **開発状況:** 初期開発・ジオメトリプロトタイプ  
+> 現時点ではファウンドリ認定済みのPhotonics PDKではありません。
 
-### PCell library v4
+## 概要
 
-Registered KLayout library: `Photonics`
+このプロジェクトでは、KLayoutのPCell機能を利用して、Silicon Photonics向けの基本的な光デバイスを生成します。
 
-- Straight
-- Bend90
-- EulerBend
-- SBend
-- Ring
-- DirectionalCoupler
-- MMI_1x2
-- MZI
-- WaveguideRoute
-- PortConnector
+また、光ポートを指定してPCell間を導波路で接続する **Photonics Router** を開発しています。
 
-### Photonics Router
+主な目的：
 
-- **v5.1**: two-click interactive routing — tested
-- **v5.2**: automatic optical-port position snapping — tested
-- **v5.3.2**: port-position + port-direction routing — implementation ready, KLayout 0.30.9 verification pending
+- KLayoutによるSilicon Photonicsレイアウトの学習・実験
+- PCellによる光デバイスのパラメトリック生成
+- 光ポートを利用した導波路ルーティング
+- オープンソースPhotonics PDKの開発
+- Silicon Photonicsレイアウト技術の教育
 
-## Layers
+## PCell Library v4
 
-| Purpose | Layer/Datatype |
+KLayout登録ライブラリ名：`Photonics`
+
+現在、以下の10種類のPCellを実装しています。
+
+| PCell | 機能 |
+|---|---|
+| `Straight` | 直線導波路 |
+| `Bend90` | 90°ベンド |
+| `EulerBend` | Euler系ベンド |
+| `SBend` | Sベンド |
+| `Ring` | リング共振器 |
+| `DirectionalCoupler` | 方向性結合器 |
+| `MMI_1x2` | 1入力2出力 MMI |
+| `MZI` | Mach-Zehnder Interferometer |
+| `WaveguideRoute` | Bézier曲線による導波路 |
+| `PortConnector` | ポート接続用導波路 |
+
+## Photonics Router
+
+PCell間を接続する対話型導波路ルーターを開発しています。
+
+| Version | 機能 | 状態 |
+|---|---|---|
+| v5.1 | 2クリックによる導波路生成 | 動作確認済み |
+| v5.2 | 光ポート位置への自動スナップ | 動作確認済み |
+| v5.3 | ポート方向認識 | API互換性問題 |
+| v5.3.1 | `each_point()` 対応 | 修正継続 |
+| v5.3.2 | 位置＋方向認識Router再構築 | 動作確認中 |
+
+## レイヤ定義
+
+| 用途 | Layer / Datatype |
 |---|---:|
 | Waveguide | `1/0` |
-| Optical pins | `2/0` |
+| Optical Pin | `2/0` |
 
-The PCells use optical port names such as `opt1`, `opt2`, etc.
+光ポートには `opt1`, `opt2`, ... の名称を使用します。
 
-## Installation
+## インストール
 
-Copy the current PCell library and router macro into:
-
-```text
-~/.klayout/pymacros/
-```
-
-Recommended current setup:
+KLayoutのPython Macroディレクトリへファイルを配置します。
 
 ```text
 ~/.klayout/pymacros/
 ├── photonics_pdk_v4.lym
 └── photonics_router_v5_3_2.lym
-```
-
-Remove or move older router versions out of `pymacros` to avoid duplicate plugin registration, then fully restart KLayout.
-
-## Router usage
-
-1. Open a layout containing the photonics PCells.
-2. Select `Photonics Router v5.3.2` from the toolbar.
-3. Click near the first optical port.
-4. Click near the second optical port.
-5. The router creates a waveguide on `1/0`.
-
-Current defaults:
-
-- waveguide width: `0.5 µm`
-- optical pin layer: `2/0`
-- snap radius: `4.0 µm`
-- Bézier sampling points: `80`
-
-See [docs/specification.md](docs/specification.md) for details and known limitations.
-
-## Repository layout
-
-```text
-.
-├── README.md
-├── LICENSE
-├── .gitignore
-├── pymacros/
-│   ├── photonics_pdk_v4.lym
-│   └── photonics_router_v5_3_2.lym
-├── docs/
-│   ├── specification.md
-│   └── KLayout_Silicon_Photonics_PCell_Router_Spec_v0.1.docx
-├── examples/
-└── tests/
-```
-
-## Important limitations
-
-The current cells and router are intended for layout prototyping and development. Component dimensions are not yet tied to a validated fabrication process or optical simulation model. The router is Bézier-based and does not yet mathematically guarantee minimum bend radius, DRC-aware obstacle avoidance, path-length matching, or automatic taper insertion.
-
-## Versioning plan
-
-- `v0.1.0`: PCell v4 + experimental Router v5.3.x
-- `v0.2.0`: stable port-aware router
-- `v0.3.0`: bend-radius-aware routing
-- `v1.0.0`: first stable release
-
-## License
-
-MIT License. See [LICENSE](LICENSE).
