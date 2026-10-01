@@ -100,16 +100,22 @@ Main improvements:
 
 ## Photonics Router v5.4 Examples
 
-Verified on KLayout 0.30.9. Optical port positions and directions are
-detected and connected smoothly without the unwanted loop.
+Examples verified on KLayout 0.30.9.
 
-![Photonics Router v5.4 connected
-routing](images/router_v5_4_connected.png)
+### Before routing
 
-Example with multiple port placements:
+The optical ports are not yet connected.
 
 ![Photonics Router v5.4 routing
 segments](images/router_v5_4_segments.png)
+
+### After routing
+
+Photonics Router v5.4 detects the optical port positions and directions
+and creates smooth connections without the unwanted loop.
+
+![Photonics Router v5.4 connected
+routing](images/router_v5_4_connected.png)
 
 > **Note:** v5.4 is an experimental geometry-based router. Strict
 > minimum bend-radius guarantees, obstacle avoidance, DRC-aware routing,
