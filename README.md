@@ -39,6 +39,14 @@ KLayout の PCell（Parameterized Cell）機能を利用して、Silicon Photoni
   `WaveguideRoute`       Bézier 曲線による導波路
   `PortConnector`        光ポート接続用導波路
 
+## PCell Library v4 動作例
+
+KLayout 0.30.9 上で生成した PCell Library v4
+のレイアウト例です。Straight、Bend、Ring、Directional
+Coupler、MMI、MZI、S-bend などの基本ジオメトリを確認できます。
+
+![PCell Library v4](images/pcell_library_v4.png)
+
 # レイヤ定義
 
   用途            Layer / Datatype
@@ -60,90 +68,110 @@ KLayout の PCell（Parameterized Cell）機能を利用して、Silicon Photoni
 
 ## Router 開発履歴
 
-  ------------------------------------------------------------------------------
-  Version                 機能                           状態
-  ----------------------- ------------------------------ -----------------------
-  v5.1                    2クリックによる導波路生成      ✅ KLayout 0.30.9
-                                                         動作確認済み
+  ----------------------------------------------------------------------------
+  Version             機能                                 状態
+  ------------------- ------------------------------------ -------------------
+  v5.1                2クリックによる導波路生成            ✅ KLayout 0.30.9
+                                                           動作確認済み
 
-  v5.2                    光ポート位置への自動スナップ   ✅ KLayout 0.30.9
-                                                         動作確認済み
+  v5.2                光ポート位置への自動スナップ         ✅ KLayout 0.30.9
+                                                           動作確認済み
 
-  v5.3                    ポート方向認識                 API互換性問題
+  v5.3                ポート方向認識                       API互換性問題
 
-  v5.3.1                  `each_point()` 対応            修正継続
+  v5.3.1              `each_point()` 対応                  修正継続
 
-  **v5.3.2**              **光ポート位置＋方向認識       **✅ KLayout 0.30.9
-                          Router**                       動作確認済み**
-  ------------------------------------------------------------------------------
+  v5.3.2              光ポート位置＋方向認識 Router        ✅ KLayout 0.30.9
+                                                           動作確認済み
 
-## Router v5.3.2
+  **v5.4**            **ループ抑制＋経路形状の自動調整**   **✅ KLayout 0.30.9
+                                                           動作確認済み**
+  ----------------------------------------------------------------------------
 
-**Photonics Router v5.3.2 は KLayout 0.30.9 で動作確認済みです。**
+## Router v5.4
 
-Layer `2/0` の Pin Path
-から光ポートの位置と方向を取得し、始点・終点の方向を考慮した滑らかな導波路を
-Layer `1/0` に生成します。
+**Photonics Router v5.4 は KLayout 0.30.9 で動作確認済みです。**
 
-基本処理：
+v5.3.2 のポート位置・方向認識を継承しつつ、ポート配置によって Bézier
+曲線が不要に大回りしたりループ状になったりする問題を改善しました。
 
-1.  1つ目の光ポート付近をクリック
-2.  Layer `2/0` の Pin Path を探索
-3.  光ポート位置へ自動スナップ
-4.  Pin Path からポート方向を取得
-5.  2つ目の光ポート付近をクリック
-6.  同様に位置と方向を取得
-7.  両ポートの方向を考慮した Bézier 曲線を生成
-8.  Layer `1/0` に導波路を生成
+主な改善点：
 
-### 現在確認済みの機能
-
--   2クリックによる対話型ルーティング
--   Layer `2/0` の光ポート探索
 -   光ポート位置への自動スナップ
 -   Pin Path からのポート方向認識
--   始点・終点ポート方向への接線接続
--   Cubic Bézier 曲線による滑らかな導波路生成
+-   ポート間距離に応じた制御距離の自動調整
+-   相手ポートとの位置関係を考慮した方向選択
+-   過大な迂回・折り返しの検出
+-   必要に応じた中間点を使うフォールバック経路
+-   始点・終点での滑らかな接線接続
 -   Layer `1/0` への導波路生成
 
-> **Note:**
-> 現在のルーターはジオメトリベースの実験的ルーターです。最小曲げ半径の厳密な保証、障害物回避、DRC-aware
-> routing、光路長マッチングなどは今後実装予定です。
+## Photonics Router v5.4 動作例
 
-# Router の基本パラメータ
+KLayout 0.30.9
+での動作例です。光ポートの位置と方向を認識し、不要なループを発生させず滑らかに接続しています。
 
-  Parameter            Value 内容
-  --------------- ---------- ------------------------------
-  `WG_WIDTH`        `0.5 µm` 導波路幅
-  `SNAP_RADIUS`     `4.0 µm` 光ポート探索範囲
-  `LEAD`            `8.0 µm` ポート方向を維持する制御距離
-  `NPTS`                `80` Bézier 曲線の分割点数
-  `WG_LAYER`           `1/0` 導波路レイヤ
-  `PIN_LAYER`          `2/0` 光ポートレイヤ
+![Photonics Router v5.4 connected
+routing](images/router_v5_4_connected.png)
+
+複数のポート配置に対するルーティング例です。
+
+![Photonics Router v5.4 routing
+segments](images/router_v5_4_segments.png)
+
+> **Note:** v5.4
+> はループ抑制を改善した実験的ジオメトリルーターです。厳密な最小曲げ半径保証、障害物回避、DRC-aware
+> routing、光路長マッチングは今後の課題です。
+
+# Router v5.4 の基本パラメータ
+
+  Parameter             Value 内容
+  --------------- ----------- -----------------------
+  `WG_WIDTH`         `0.5 µm` 導波路幅
+  `SNAP_RADIUS`      `4.0 µm` 光ポート探索範囲
+  `MIN_LEAD`         `4.0 µm` 最小制御距離
+  `MAX_LEAD`        `20.0 µm` 最大制御距離
+  `NPTS`                 `96` Bézier 曲線の分割点数
+  `WG_LAYER`            `1/0` 導波路レイヤ
+  `PIN_LAYER`           `2/0` 光ポートレイヤ
 
 # インストール
 
 ``` text
 ~/.klayout/pymacros/
 ├── photonics_pdk_v4.lym
-└── photonics_router_v5_3_2.lym
+└── photonics_router_v5_4.lym
 ```
 
-変更後は KLayout を完全終了して再起動してください。
+旧Routerとの重複登録を避ける場合は、使用しない旧バージョンを `pymacros`
+外へ移動してください。変更後は KLayout を完全終了して再起動します。
+
+# リポジトリ構成
+
+``` text
+klayout-photonics-pdk/
+├── README.md
+├── README_en.md
+├── LICENSE
+├── images/
+│   ├── router_v5_4_connected.png
+│   └── router_v5_4_segments.png
+├── pymacros/
+│   ├── photonics_pdk_v4.lym
+│   ├── photonics_router_v5_3_2.lym
+│   └── photonics_router_v5_4.lym
+├── docs/
+├── examples/
+└── tests/
+```
 
 # 開発ロードマップ
-
-## v5.4
-
--   ポート方向認識 Router の安定化
--   選択ポートの可視化
--   Snap 状態の表示
--   Router 操作性の改善
 
 ## v5.5
 
 -   最小曲げ半径を考慮した Router
 -   Euler / Arc ベースのルーティング
+-   より自然な光ポート接続
 
 ## v6
 

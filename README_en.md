@@ -11,10 +11,9 @@ router for **KLayout 0.30.9**.
 
 ## Overview
 
-This project uses KLayout PCells (Parameterized Cells) to parametrically
-generate basic optical devices for Silicon Photonics. It also includes
-an interactive **Photonics Router** for connecting optical ports between
-PCells with waveguides.
+This project uses KLayout PCells (Parameterized Cells) to generate basic
+Silicon Photonics devices and develops an interactive **Photonics
+Router** for connecting optical ports between PCells.
 
 ## Supported Environment
 
@@ -39,6 +38,14 @@ Registered library name: `Photonics`
   `WaveguideRoute`       Bézier-curve waveguide
   `PortConnector`        Optical port connection waveguide
 
+## PCell Library v4 Example
+
+Example layout generated with PCell Library v4 on KLayout 0.30.9. The
+image shows representative geometries including straight waveguides,
+bends, a ring, directional coupler, MMI, MZI, and S-bend structures.
+
+![PCell Library v4](images/pcell_library_v4.png)
+
 # Layer Definition
 
   Purpose         Layer / Datatype
@@ -47,16 +54,6 @@ Registered library name: `Photonics`
   Optical Pin                `2/0`
 
 # Photonics Router
-
-Basic operation:
-
-``` text
-Click start port
-       ↓
-Click destination port
-       ↓
-Generate waveguide automatically
-```
 
 ## Router Development History
 
@@ -67,93 +64,109 @@ Generate waveguide automatically
                           generation              0.30.9
 
   v5.2                    Automatic snapping to   ✅ Verified on KLayout
-                          optical port positions  0.30.9
+                          optical ports           0.30.9
 
   v5.3                    Port-direction          API compatibility issue
                           detection               
 
   v5.3.1                  `each_point()` support  Revision continued
 
-  **v5.3.2**              **Optical port          **✅ Verified on
-                          position +              KLayout 0.30.9**
-                          direction-aware         
-                          routing**               
+  v5.3.2                  Port position +         ✅ Verified on KLayout
+                          direction-aware routing 0.30.9
+
+  **v5.4**                **Loop suppression +    **✅ Verified on
+                          automatic route-shape   KLayout 0.30.9**
+                          adjustment**            
   -----------------------------------------------------------------------
 
-## Router v5.3.2
+## Router v5.4
 
-**Photonics Router v5.3.2 has been verified on KLayout 0.30.9.**
+**Photonics Router v5.4 has been verified on KLayout 0.30.9.**
 
-The router obtains optical port positions and directions from Pin Paths
-on Layer `2/0`, then generates a smooth waveguide on Layer `1/0` while
-taking the source and destination port directions into account.
+v5.4 retains the port-position and direction detection introduced in
+v5.3.2 while improving cases where a Bézier route could make an
+unnecessary detour or loop.
 
-Basic processing flow:
+Main improvements:
 
-1.  Click near the first optical port
-2.  Search for a Pin Path on Layer `2/0`
-3.  Automatically snap to the optical port position
-4.  Determine the port direction from the Pin Path
-5.  Click near the second optical port
-6.  Determine its position and direction
-7.  Generate a Bézier curve using both port directions
-8.  Create the waveguide on Layer `1/0`
-
-### Verified Functions
-
--   Interactive two-click routing
--   Optical port search on Layer `2/0`
--   Automatic snapping to optical port positions
+-   Automatic snapping to optical ports
 -   Port-direction detection from Pin Paths
--   Tangential connection to source and destination port directions
--   Smooth waveguide generation using a cubic Bézier curve
+-   Automatic control-distance scaling based on port spacing
+-   Direction selection based on relative port positions
+-   Detection of excessive detours and reversals
+-   Midpoint fallback routing when required
+-   Smooth tangential connections at source and destination ports
 -   Waveguide generation on Layer `1/0`
 
-> **Note:** The current router is an experimental geometry-based router.
-> Strict minimum bend-radius guarantees, obstacle avoidance, DRC-aware
-> routing, optical path-length matching, and related advanced functions
-> are planned for future development.
+## Photonics Router v5.4 Examples
 
-# Router Parameters
+Verified on KLayout 0.30.9. Optical port positions and directions are
+detected and connected smoothly without the unwanted loop.
 
-  Parameter            Value Description
-  --------------- ---------- -------------------------------------
-  `WG_WIDTH`        `0.5 µm` Waveguide width
-  `SNAP_RADIUS`     `4.0 µm` Optical port search radius
-  `LEAD`            `8.0 µm` Control distance for port direction
-  `NPTS`                `80` Number of Bézier curve points
-  `WG_LAYER`           `1/0` Waveguide layer
-  `PIN_LAYER`          `2/0` Optical pin layer
+![Photonics Router v5.4 connected
+routing](images/router_v5_4_connected.png)
+
+Example with multiple port placements:
+
+![Photonics Router v5.4 routing
+segments](images/router_v5_4_segments.png)
+
+> **Note:** v5.4 is an experimental geometry-based router. Strict
+> minimum bend-radius guarantees, obstacle avoidance, DRC-aware routing,
+> and optical path-length matching remain future work.
+
+# Router v5.4 Parameters
+
+  Parameter             Value Description
+  --------------- ----------- -------------------------------
+  `WG_WIDTH`         `0.5 µm` Waveguide width
+  `SNAP_RADIUS`      `4.0 µm` Optical port search radius
+  `MIN_LEAD`         `4.0 µm` Minimum control distance
+  `MAX_LEAD`        `20.0 µm` Maximum control distance
+  `NPTS`                 `96` Number of Bézier curve points
+  `WG_LAYER`            `1/0` Waveguide layer
+  `PIN_LAYER`           `2/0` Optical pin layer
 
 # Installation
 
 ``` text
 ~/.klayout/pymacros/
 ├── photonics_pdk_v4.lym
-└── photonics_router_v5_3_2.lym
+└── photonics_router_v5_4.lym
 ```
 
-After changing the macro files, completely exit KLayout and restart it.
+# Repository Structure
+
+``` text
+klayout-photonics-pdk/
+├── README.md
+├── README_en.md
+├── LICENSE
+├── images/
+│   ├── router_v5_4_connected.png
+│   └── router_v5_4_segments.png
+├── pymacros/
+│   ├── photonics_pdk_v4.lym
+│   ├── photonics_router_v5_3_2.lym
+│   └── photonics_router_v5_4.lym
+├── docs/
+├── examples/
+└── tests/
+```
 
 # Development Roadmap
-
-## v5.4
-
--   Stabilize the port-direction-aware router
--   Visualize selected ports
--   Display snap status
--   Improve router usability
 
 ## v5.5
 
 -   Minimum-bend-radius-aware routing
 -   Euler / Arc-based routing
+-   More natural optical port connections
 
 ## v6
 
 -   Obstacle avoidance
 -   DRC-aware routing
--   Inherit waveguide width and layer information from ports
+-   Port width/layer inheritance
 -   Automatic taper insertion
 
 # License
