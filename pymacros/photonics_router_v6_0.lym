@@ -1,0 +1,501 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+<description>Photonics Router v6.0 - Photonic Netlist Extraction</description>
+<version>6.0</version>
+<category>Photonics</category>
+<autorun>true</autorun>
+<autorun-early>false</autorun-early>
+<show-in-menu>false</show-in-menu>
+<interpreter>python</interpreter>
+<text><![CDATA[
+import pya
+import math
+
+WG_LAYER = pya.LayerInfo(1, 0)
+PIN_LAYER = pya.LayerInfo(2, 0)
+WG_WIDTH = 0.5
+SNAP_RADIUS = 4.0
+MIN_LEAD = 4.0
+MAX_LEAD = 20.0
+NPTS = 96
+CONNECT_TOL = 0.15  # um
+
+class OpticalPort:
+    """Optical-port metadata including owning instance identification."""
+    def __init__(self, name, position, direction, width=WG_WIDTH,
+                 instance_name=None, cell_name=None):
+        self.name = name
+        self.position = position
+        self.direction = direction
+        self.width = width
+        self.instance_name = instance_name
+        self.cell_name = cell_name
+
+    @property
+    def qualified_name(self):
+        if self.instance_name:
+            return "%s.%s" % (self.instance_name, self.name)
+        return self.name
+
+    def __repr__(self):
+        return "OpticalPort(%s, x=%.3f, y=%.3f, width=%.3f)" % (
+            self.qualified_name, self.position.x, self.position.y, self.width)
+
+def unit(dx, dy):
+    d = math.hypot(dx, dy)
+    return None if d < 1e-12 else (dx/d, dy/d)
+
+def dist(a, b):
+    return math.hypot(a.x-b.x, a.y-b.y)
+
+def dot(a, b):
+    return a[0]*b[0] + a[1]*b[1]
+
+def path_points(path, dbu):
+    pts = []
+    for q in path.each_point():
+        if isinstance(q, pya.DPoint):
+            pts.append(q)
+        else:
+            pts.append(pya.DPoint(q.x*dbu, q.y*dbu))
+    return pts
+
+def _safe_cell_name(cell):
+    try:
+        name = str(cell.name)
+    except Exception:
+        name = "device"
+    # PCell variant names can contain generated suffixes. Keep the visible
+    # cell name but remove whitespace so it is convenient in messages.
+    return "".join(name.split()) or "device"
+
+def collect_pin_objects(cell, layout, trans=None, result=None,
+                        owner=None, cell_name=None):
+    """Collect PIN_LAYER paths/texts recursively with instance ownership."""
+    if result is None:
+        result = {"paths": [], "texts": []}
+    if trans is None:
+        trans = pya.DCplxTrans()
+    if cell_name is None:
+        cell_name = _safe_cell_name(cell)
+
+    li = layout.layer(PIN_LAYER)
+
+    for sh in cell.shapes(li).each():
+        try:
+            if sh.is_path():
+                pts = path_points(sh.path, layout.dbu)
+                pts = [trans * q for q in pts]
+                if len(pts) >= 2:
+                    width = sh.path.width * layout.dbu
+                    result["paths"].append(
+                        (pts, width, owner, cell_name))
+            elif sh.is_text():
+                t = sh.text
+                try:
+                    tp = pya.DPoint(t.trans.disp.x * layout.dbu,
+                                    t.trans.disp.y * layout.dbu)
+                except Exception:
+                    tp = pya.DPoint(t.x * layout.dbu, t.y * layout.dbu)
+                result["texts"].append(
+                    (str(t.string), trans * tp, owner, cell_name))
+        except Exception:
+            pass
+
+    # Assign a stable, readable identifier to each child instance in this
+    # hierarchy level. This does not modify the layout.
+    counters = {}
+    try:
+        for inst in cell.each_inst():
+            child = layout.cell(inst.cell_index)
+            base = _safe_cell_name(child)
+            counters[base] = counters.get(base, 0) + 1
+            local_name = "%s[%d]" % (base, counters[base])
+            inst_name = local_name if owner is None else "%s/%s" % (
+                owner, local_name)
+
+            try:
+                it = inst.dcplx_trans
+            except Exception:
+                it = pya.DCplxTrans(inst.trans)
+
+            collect_pin_objects(
+                child, layout, trans * it, result,
+                inst_name, base)
+    except Exception:
+        pass
+
+    return result
+
+def collect_ports(cell, layout):
+    """Build native PCell ports and preserve their owning instance."""
+    objects = collect_pin_objects(cell, layout)
+    paths = objects["paths"]
+    texts = objects["texts"]
+    ports = []
+    match_radius = max(1.5, SNAP_RADIUS)
+
+    for name, label_pos, owner, text_cell_name in texts:
+        best = None
+        best_d = match_radius
+
+        # Prefer a pin path belonging to the same instance as the label.
+        for pts, width, path_owner, path_cell_name in paths:
+            if path_owner != owner:
+                continue
+            for endpoint, inner in ((pts[0], pts[1]), (pts[-1], pts[-2])):
+                d = dist(label_pos, endpoint)
+                if d <= best_d:
+                    best_d = d
+                    best = (endpoint, inner, width, path_cell_name)
+
+        if best is None:
+            continue
+
+        endpoint, inner, width, path_cell_name = best
+        direction = unit(endpoint.x-inner.x, endpoint.y-inner.y)
+        if direction is None:
+            continue
+
+        ports.append(OpticalPort(
+            name, endpoint, direction, width,
+            instance_name=owner,
+            cell_name=path_cell_name))
+
+    return ports
+
+def nearest_port(cell, layout, click):
+    best = None
+    bd = SNAP_RADIUS
+
+    for port in collect_ports(cell, layout):
+        d = dist(click, port.position)
+        if d <= bd:
+            bd = d
+            best = port
+    return best
+
+def polyline_length(pts):
+    return sum(dist(pts[i-1], pts[i]) for i in range(1, len(pts)))
+
+def cubic(p0, c0, c1, p1, n):
+    out = []
+    for i in range(n+1):
+        t = float(i)/n
+        u = 1.0-t
+        out.append(pya.DPoint(
+            u*u*u*p0.x + 3*u*u*t*c0.x + 3*u*t*t*c1.x + t*t*t*p1.x,
+            u*u*u*p0.y + 3*u*u*t*c0.y + 3*u*t*t*c1.y + t*t*t*p1.y))
+    return out
+
+def polyline_has_loop(pts):
+    # Fast sanity check: detect strong reversal of successive segments.
+    prev = None
+    reversals = 0
+    for i in range(1, len(pts)):
+        v = unit(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y)
+        if v is None:
+            continue
+        if prev is not None and dot(prev, v) < -0.15:
+            reversals += 1
+        prev = v
+    return reversals > 0
+
+def route_points(p0, p1, d0, d1):
+    """
+    v5.5 routing core (inherited from v5.4):
+      * automatically scale lead length with port spacing
+      * prefer directions that point toward the opposite port
+      * if a single cubic looks folded, fall back to a midpoint route
+    """
+    D = dist(p0, p1)
+    if D < 1e-9:
+        return [p0, p1]
+
+    toward01 = unit(p1.x-p0.x, p1.y-p0.y)
+    toward10 = (-toward01[0], -toward01[1])
+
+    # A physical connection leaves each optical interface into free routing
+    # space.  Depending on how the PCell pin path was drawn, the detected
+    # vector can be reversed. Choose the sign which points more toward the
+    # other endpoint. This prevents the common large-loop case.
+    if dot(d0, toward01) < dot((-d0[0], -d0[1]), toward01):
+        d0 = (-d0[0], -d0[1])
+    if dot(d1, toward10) < dot((-d1[0], -d1[1]), toward10):
+        d1 = (-d1[0], -d1[1])
+
+    lead = max(MIN_LEAD, min(MAX_LEAD, 0.28*D))
+
+    c0 = pya.DPoint(p0.x + lead*d0[0], p0.y + lead*d0[1])
+    # Endpoint derivative is p1-c1, therefore c1 lies opposite the
+    # desired arrival tangent.
+    c1 = pya.DPoint(p1.x + lead*d1[0], p1.y + lead*d1[1])
+
+    pts = cubic(p0, c0, c1, p1, NPTS)
+
+    # Additional geometric guard: an excessive route length usually means
+    # the cubic is making an unwanted detour/loop.
+    plen = sum(dist(pts[i-1], pts[i]) for i in range(1, len(pts)))
+    if not polyline_has_loop(pts) and plen <= 1.65*D:
+        return pts
+
+    # Fallback: two smooth cubic sections through a neutral midpoint.
+    # This avoids forcing incompatible endpoint tangents into one cubic.
+    mid = pya.DPoint((p0.x+p1.x)/2.0, (p0.y+p1.y)/2.0)
+    md = toward01
+    half = max(MIN_LEAD, min(MAX_LEAD, 0.18*D))
+
+    a0 = pya.DPoint(p0.x + half*d0[0], p0.y + half*d0[1])
+    a1 = pya.DPoint(mid.x - half*md[0], mid.y - half*md[1])
+    b0 = pya.DPoint(mid.x + half*md[0], mid.y + half*md[1])
+    b1 = pya.DPoint(p1.x + half*d1[0], p1.y + half*d1[1])
+
+    left = cubic(p0, a0, a1, mid, NPTS//2)
+    right = cubic(mid, b0, b1, p1, NPTS//2)
+    return left + right[1:]
+
+
+def collect_waveguide_paths(cell, layout, trans=None, result=None):
+    """Collect WG_LAYER paths recursively in top-cell coordinates."""
+    if result is None:
+        result = []
+    if trans is None:
+        trans = pya.DCplxTrans()
+
+    li = layout.layer(WG_LAYER)
+    for sh in cell.shapes(li).each():
+        try:
+            if sh.is_path():
+                pts = path_points(sh.path, layout.dbu)
+                pts = [trans * q for q in pts]
+                if len(pts) >= 2:
+                    result.append(pts)
+        except Exception:
+            pass
+
+    try:
+        for inst in cell.each_inst():
+            child = layout.cell(inst.cell_index)
+            try:
+                it = inst.dcplx_trans
+            except Exception:
+                it = pya.DCplxTrans(inst.trans)
+            collect_waveguide_paths(child, layout, trans * it, result)
+    except Exception:
+        pass
+    return result
+
+class PhotonicNet:
+    """Extracted photonic net connecting optical ports."""
+    def __init__(self, name, ports, length=0.0):
+        self.name = name
+        self.ports = list(ports)
+        self.length = length
+
+    def __repr__(self):
+        return "PhotonicNet(%s, ports=%s, length=%.3f)" % (
+            self.name,
+            [p.qualified_name for p in self.ports],
+            self.length)
+
+def ports_at_point(ports, point, tol=CONNECT_TOL):
+    return [p for p in ports if dist(p.position, point) <= tol]
+
+def extract_connection_pairs(cell, layout):
+    """Extract routed optical-port pairs from WG path endpoints."""
+    ports = collect_ports(cell, layout)
+    wg_paths = collect_waveguide_paths(cell, layout)
+    pairs = []
+    seen = set()
+
+    for pts in wg_paths:
+        if len(pts) < 2:
+            continue
+        a_ports = ports_at_point(ports, pts[0])
+        b_ports = ports_at_point(ports, pts[-1])
+
+        for a in a_ports:
+            for b in b_ports:
+                if a is b or a.instance_name == b.instance_name:
+                    continue
+                names = tuple(sorted((a.qualified_name, b.qualified_name)))
+                if names in seen:
+                    continue
+                seen.add(names)
+                pairs.append((a, b, polyline_length(pts)))
+
+    return ports, pairs
+
+def extract_photonic_netlist(cell, layout):
+    """Convert extracted connection pairs into PhotonicNet objects."""
+    ports, pairs = extract_connection_pairs(cell, layout)
+    nets = []
+    for i, (a, b, length) in enumerate(pairs, 1):
+        nets.append(PhotonicNet("NET%d" % i, [a, b], length))
+
+    devices = {}
+    for p in ports:
+        if p.instance_name:
+            devices[p.instance_name] = p.cell_name
+
+    return ports, devices, nets
+
+def verify_connectivity(cell, layout):
+    ports, devices, nets = extract_photonic_netlist(cell, layout)
+    connected_names = set()
+    for net in nets:
+        for p in net.ports:
+            connected_names.add(p.qualified_name)
+
+    connected = [p for p in ports if p.qualified_name in connected_names]
+    unconnected = [p for p in ports if p.qualified_name not in connected_names]
+    return connected, unconnected, devices, nets
+
+def netlist_report(cell, layout):
+    connected, unconnected, devices, nets = verify_connectivity(cell, layout)
+
+    lines = [
+        "[Photonics Router v6.0 Photonic Netlist]",
+        "Devices: %d" % len(devices),
+        "Nets: %d" % len(nets),
+        "Connected ports: %d" % len(connected),
+        "Unconnected ports: %d" % len(unconnected),
+        "",
+        "DEVICES",
+    ]
+
+    for inst_name in sorted(devices):
+        lines.append("  DEVICE %s  TYPE %s" % (
+            inst_name, devices[inst_name]))
+
+    if nets:
+        lines.append("")
+        lines.append("NETLIST")
+        for net in nets:
+            lines.append("  NET %s" % net.name)
+            for p in net.ports:
+                lines.append("    PORT %s" % p.qualified_name)
+            lines.append("    LENGTH %.3f um" % net.length)
+
+    if unconnected:
+        lines.append("")
+        lines.append("UNCONNECTED")
+        for p in unconnected:
+            lines.append("  --  %s" % p.qualified_name)
+
+    return "\n".join(lines)
+
+# Compatibility name used by the Router UI.
+def connectivity_report(cell, layout):
+    return netlist_report(cell, layout)
+
+class Router(pya.Plugin):
+    def __init__(self):
+        super(Router, self).__init__()
+        self.first = None
+
+    def activated(self):
+        self.first = None
+        try:
+            pya.MainWindow.instance().message(
+                "Photonics Router v6.0 - click source port", 2500)
+        except Exception:
+            pass
+
+    def deactivated(self):
+        self.first = None
+
+    def mouse_click_event(self, p, buttons, prio):
+        if prio:
+            return False
+
+        view = pya.LayoutView.current()
+        if view is None:
+            return False
+        cv = view.active_cellview()
+        if cv is None or not cv.is_valid():
+            return False
+
+        layout = cv.layout()
+        cell = cv.cell
+        click = pya.DPoint(p.x, p.y)
+        port = nearest_port(cell, layout, click)
+
+        if port is None:
+            try:
+                pya.MainWindow.instance().message(
+                    "No optical port found within %.1f um" % SNAP_RADIUS, 2200)
+            except Exception:
+                pass
+            return True
+
+        if self.first is None:
+            self.first = port
+            try:
+                pya.MainWindow.instance().message(
+                    "Source %s selected - click destination" % port.qualified_name, 2200)
+            except Exception:
+                pass
+            return True
+
+        src = self.first
+        dst = port
+        self.first = None
+
+        p0, d0 = src.position, src.direction
+        p1, d1 = dst.position, dst.direction
+        pts = route_points(p0, p1, d0, d1)
+        wg_width = min(src.width, dst.width)
+        cell.shapes(layout.layer(WG_LAYER)).insert(pya.DPath(pts, wg_width))
+        wg_length = polyline_length(pts)
+
+        try:
+            view.add_missing_layers()
+        except Exception:
+            pass
+
+        msg = (
+            "[Photonics Router v6.0]\n"
+            "%s -> %s\n"
+            "Length = %.3f um" % (src.qualified_name, dst.qualified_name, wg_length)
+        )
+
+        # Python console output (Macro Development -> Console -> Python)
+        print(msg)
+
+        report = connectivity_report(cell, layout)
+        print(report)
+
+        # KLayout status bar
+        try:
+            pya.MainWindow.instance().message(
+                "Waveguide %s -> %s created | Length = %.3f um" % (
+                    src.qualified_name, dst.qualified_name, wg_length), 5000)
+        except Exception:
+            pass
+
+        # Visible confirmation dialog
+        try:
+            pya.MessageBox.info(
+                "Photonics Router v6.0",
+                "Waveguide %s -> %s created\n\nLength = %.3f um\n\n%s" % (
+                    src.qualified_name, dst.qualified_name, wg_length,
+                    connectivity_report(cell, layout)),
+                pya.MessageBox.Ok)
+        except Exception as ex:
+            print("MessageBox error: %s" % ex)
+
+        return True
+
+class RouterFactory(pya.PluginFactory):
+    def __init__(self):
+        super(RouterFactory, self).__init__()
+        self.register(-1000, "photonics_router_v5_5",
+                      "Photonics Router v5.5")
+
+    def create_plugin(self, manager, root, view):
+        return Router()
+
+RouterFactory()
+]]></text>
+</klayout-macro>

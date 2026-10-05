@@ -12,8 +12,10 @@ for **KLayout 0.30.9**.
 
 This project uses KLayout's PCell (Parameterized Cell) framework to generate
 basic parametric devices for Silicon Photonics. It also includes a
-**Photonics Router** for interactively connecting optical ports defined by
-the PCells.
+**Photonics Router** for interactively connecting optical ports defined by PCells.
+
+Router v6.0 can recognize PCell port names, instances, connectivity, and
+waveguide lengths, and can extract a basic photonic netlist from the layout.
 
 ## Supported Environment
 
@@ -38,12 +40,6 @@ Registered library name: `Photonics`
 | `WaveguideRoute` | Bézier-curve waveguide |
 | `PortConnector` | Waveguide for optical-port connection |
 
-## PCell Library v4 Example
-
-The following layout was generated with PCell Library v4 on KLayout 0.30.9.
-It demonstrates basic geometries including Straight, Bend, Ring,
-Directional Coupler, MMI, MZI, and S-bend devices.
-
 ![PCell Library v4](images/pcell_library_v4.png)
 
 # Layer Definition
@@ -58,98 +54,51 @@ Directional Coupler, MMI, MZI, and S-bend devices.
 Basic operation:
 
 ```text
-Click start port
+Click source port
        ↓
 Click destination port
        ↓
 Generate waveguide automatically
+       ↓
+Extract connectivity and path length
 ```
 
 ## Router Development History
 
-| Version | Feature | Status |
+| Version | Main feature | Status |
 |---|---|---|
 | v5.1 | Two-click waveguide generation | ✅ Verified on KLayout 0.30.9 |
 | v5.2 | Automatic snapping to optical ports | ✅ Verified on KLayout 0.30.9 |
 | v5.3 | Port direction recognition | API compatibility issue |
-| v5.3.1 | `each_point()` support | Fix in progress |
-| v5.3.2 | Optical-port position + direction-aware router | ✅ Verified on KLayout 0.30.9 |
-| **v5.4** | **Loop suppression + automatic route-shape adjustment** | **✅ Verified on KLayout 0.30.9** |
-| **v5.5** | **Port metadata + waveguide length calculation** | **✅ Verified on KLayout 0.30.9** |
+| v5.3.1 | `each_point()` support | Fixed version |
+| v5.3.2 | Port position + direction recognition | ✅ Verified on KLayout 0.30.9 |
+| v5.4 | Loop suppression + automatic route adjustment | ✅ Verified on KLayout 0.30.9 |
+| v5.5 | Port metadata + waveguide length | ✅ Verified on KLayout 0.30.9 |
+| v5.6 | Connectivity verification | ✅ Verified on KLayout 0.30.9 |
+| **v6.0** | **Photonic Netlist Extraction** | **✅ Verified on KLayout 0.30.9** |
 
 ## Router v5.4
 
-**Photonics Router v5.4 has been verified on KLayout 0.30.9.**
-
-v5.4 inherits the port-position and direction recognition introduced in
-v5.3.2 while improving cases where Bézier routes could make unnecessarily
-large detours or form loop-like paths depending on port placement.
-
-Main improvements:
-
-- Automatic snapping to optical-port positions
-- Port direction recognition from Pin Paths
-- Automatic control-distance adjustment based on port spacing
-- Direction selection based on the relative position of the opposite port
-- Detection of excessive detours and fold-back routes
-- Fallback routing using intermediate points when necessary
-- Smooth tangent connections at the start and end ports
-- Waveguide generation on Layer `1/0`
-
-## Photonics Router v5.4 Example
-
-Example operation on KLayout 0.30.9.
-
-### Before Routing
-
-Multiple optical ports are not yet connected.
+v5.4 improves unwanted large detours and loop-like Bézier routes while
+retaining port-position and direction recognition.
 
 ![Photonics Router v5.4 routing segments](images/router_v5_4_segments.png)
 
-### After Routing
-
-Photonics Router v5.4 recognizes the positions and directions of the optical
-ports and creates smooth connections without unnecessary loops.
-
 ![Photonics Router v5.4 connected routing](images/router_v5_4_connected.png)
-
-> **Note:** v5.4 is an experimental geometry router with improved loop
-> suppression. Strict minimum-bend-radius guarantees, obstacle avoidance,
-> DRC-aware routing, and optical path-length matching remain future work.
 
 ## Router v5.5
 
-**Photonics Router v5.5 has been verified on KLayout 0.30.9.**
+v5.5 introduces `OpticalPort` metadata and waveguide-length calculation.
 
-v5.5 inherits the loop suppression and automatic route-shape adjustment of
-v5.4 and introduces an `OpticalPort` structure so that optical ports can be
-handled as objects with metadata rather than only as coordinates and
-directions.
+Main features:
 
-Each `OpticalPort` currently contains:
-
-- Port name
-- Position
-- Direction
-- Waveguide width
-
-v5.5 also calculates the actual path length of the generated Bézier
-waveguide and displays the result in micrometers when routing is completed.
-
-Main additions:
-
-- Port metadata management using `OpticalPort`
-- Storage of port name / position / direction / width
-- Routing using optical-port metadata
+- Port name / position / direction / width metadata
 - Bézier waveguide path-length calculation
-- Waveguide-length output in micrometers
+- Length output in micrometers
 - Routing-completion dialog
-- Result output to the Python Console
-- Routing behavior inherited from v5.4
+- Python Console output
 
 ### Waveguide Length Verification
-
-Waveguide-length calculation was verified on KLayout 0.30.9.
 
 Straight waveguide:
 
@@ -157,9 +106,6 @@ Straight waveguide:
 Waveguide opt3 -> opt5 created
 Length = 10.000 um
 ```
-
-For a test in which the two ports were placed exactly 10.000 µm apart on a
-straight line, the calculated waveguide length was also **10.000 µm**.
 
 ![Photonics Router v5.5 straight waveguide length](images/router_v5_5_length_straight.png)
 
@@ -170,31 +116,100 @@ Waveguide opt3 -> opt5 created
 Length = 10.447 um
 ```
 
-When the ports were offset vertically and connected with a Bézier curve, the
-calculated path length increased to **10.447 µm**, as expected.
-
 ![Photonics Router v5.5 curved waveguide length](images/router_v5_5_length_curved.png)
 
-Basic flow:
+### Native Port Name / Instance Identification
+
+During development, the router was extended to recognize native PCell port
+names such as `opt1` and `opt2`, and to identify the owning instance.
+
+![Native PCell port names](images/router_v5_5_1_native_ports.png)
+
+![Instance-aware ports](images/router_v5_5_2_instance_ports.png)
+
+## Router v5.6 — Connectivity Verification
+
+v5.6 scans the layout and classifies optical ports as connected or unconnected.
 
 ```text
-Optical Port
-     ↓
-Port Metadata
-     ↓
-Photonics Router
-     ↓
-Bézier Waveguide
-     ↓
-Waveguide Length
+Connected: 2
+Unconnected: 6
 ```
 
-> **Note:** In v5.5, port names are currently assigned automatically by the
-> Router. Reading actual port names defined by PCells, inheriting port width
-> and layer metadata, and connection verification are planned for future
-> versions.
+![Photonics Router v5.6 connectivity](images/router_v5_6_connectivity.png)
 
-# Router v5.5 Basic Parameters
+Multiple connection extraction was also verified during development.
+
+```text
+Connections: 2
+Connected ports: 4
+Unconnected ports: 4
+```
+
+![Photonics Router v5.6 two nets](images/router_v5_6_two_nets.png)
+
+# Photonics Router v6.0
+
+**Photonics Router v6.0 has been verified on KLayout 0.30.9.**
+
+v6.0 analyzes PCells, native ports, instances, and routed waveguides in the
+layout and generates a basic photonic netlist.
+
+Main features:
+
+- Device recognition
+- Instance identification
+- Native PCell port-name recognition
+- Connection extraction
+- `PhotonicNet` objects
+- Connected / unconnected port detection
+- Waveguide length for each net
+- Photonic netlist display
+
+Example:
+
+```text
+DEVICES
+  DEVICE DirectionalCoupler[1] TYPE DirectionalCoupler
+  DEVICE MMI_1x2[1] TYPE MMI_1x2
+  DEVICE Ring[1] TYPE Ring
+
+NETLIST
+  NET NET1
+    PORT DirectionalCoupler[1].opt3
+    PORT DirectionalCoupler[2].opt1
+    LENGTH 10.621 um
+
+  NET NET3
+    PORT MMI_1x2[1].opt2
+    PORT Ring[1].opt1
+    LENGTH 14.504 um
+```
+
+Extraction has been verified across heterogeneous PCells including
+DirectionalCoupler, MMI, and Ring devices.
+
+![Photonics Router v6.0 photonic netlist](images/router_v6_0_netlist.png)
+
+## v6.0 Data Flow
+
+```text
+Layout
+  ↓
+Device Recognition
+  ↓
+Native PCell Port Recognition
+  ↓
+Instance Identification
+  ↓
+Connection Extraction
+  ↓
+PhotonicNet
+  ↓
+Photonic Netlist
+```
+
+# Router Basic Parameters
 
 | Parameter | Value | Description |
 |---|---:|---|
@@ -211,12 +226,11 @@ Waveguide Length
 ```text
 ~/.klayout/pymacros/
 ├── photonics_pdk_v4.lym
-└── photonics_router_v5_5.lym
+└── photonics_router_v6_0.lym
 ```
 
-To avoid duplicate registration with older Router versions, move unused
-versions outside the `pymacros` directory. Completely close and restart
-KLayout after making changes.
+To avoid duplicate Router registration, move unused older versions outside
+the `pymacros` directory and completely restart KLayout.
 
 # Repository Structure
 
@@ -229,12 +243,19 @@ klayout-photonics-pdk/
 │   ├── router_v5_4_connected.png
 │   ├── router_v5_4_segments.png
 │   ├── router_v5_5_length_curved.png
-│   └── router_v5_5_length_straight.png
+│   ├── router_v5_5_length_straight.png
+│   ├── router_v5_5_1_native_ports.png
+│   ├── router_v5_5_2_instance_ports.png
+│   ├── router_v5_6_connectivity.png
+│   ├── router_v5_6_two_nets.png
+│   └── router_v6_0_netlist.png
 ├── pymacros/
 │   ├── photonics_pdk_v4.lym
 │   ├── photonics_router_v5_3_2.lym
 │   ├── photonics_router_v5_4.lym
-│   └── photonics_router_v5_5.lym
+│   ├── photonics_router_v5_5.lym
+│   ├── photonics_router_v5_6.lym
+│   └── photonics_router_v6_0.lym
 ├── docs/
 ├── examples/
 └── tests/
@@ -242,32 +263,21 @@ klayout-photonics-pdk/
 
 # Development Roadmap
 
-## v5.5
-
-- Port metadata
-- Waveguide length calculation
-- Routing result display
-
-**Status: Completed**
-
-## v5.6
-
-- Recognition of port names defined by PCells
-- Port width / layer metadata extraction
-- Port connection detection
-- Unconnected-port detection
-- Port width mismatch detection
-- Port orientation mismatch detection
-
 ## v6.0
 
 - Device recognition
+- Instance identification
+- Native port recognition
 - Connectivity extraction
-- Photonic netlist extraction
-- Layout verification
+- Photonic Netlist extraction
 
-## Future
+**Status: Completed (prototype)**
 
+## Next
+
+- Port width mismatch detection
+- Port orientation mismatch detection
+- Netlist file export
 - Minimum-bend-radius-aware routing
 - Euler / Arc-based routing
 - Obstacle avoidance
@@ -286,9 +296,9 @@ Copyright (c) 2026 TAKE-HooJoo@SIG
 # Disclaimer
 
 This software is provided AS IS. The current PCell dimensions, device
-geometries, and routing geometries do not guarantee manufacturability,
-optical performance, or reliability for any specific Silicon Photonics
-fabrication process.
+geometries, routing geometries, and extracted photonic netlists do not
+guarantee manufacturability, optical performance, or reliability for any
+specific Silicon Photonics fabrication process.
 
 # Author
 
