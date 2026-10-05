@@ -161,6 +161,8 @@ Length = 10.000 um
 For a test in which the two ports were placed exactly 10.000 µm apart on a
 straight line, the calculated waveguide length was also **10.000 µm**.
 
+![Photonics Router v5.5 straight waveguide length](images/router_v5_5_length_straight.png)
+
 Curved waveguide:
 
 ```text
@@ -170,6 +172,8 @@ Length = 10.447 um
 
 When the ports were offset vertically and connected with a Bézier curve, the
 calculated path length increased to **10.447 µm**, as expected.
+
+![Photonics Router v5.5 curved waveguide length](images/router_v5_5_length_curved.png)
 
 Basic flow:
 
@@ -223,7 +227,9 @@ klayout-photonics-pdk/
 ├── LICENSE
 ├── images/
 │   ├── router_v5_4_connected.png
-│   └── router_v5_4_segments.png
+│   ├── router_v5_4_segments.png
+│   ├── router_v5_5_length_curved.png
+│   └── router_v5_5_length_straight.png
 ├── pymacros/
 │   ├── photonics_pdk_v4.lym
 │   ├── photonics_router_v5_3_2.lym

@@ -160,6 +160,8 @@ Length = 10.000 um
 Port 間を直線で 10.000 µm 離して配置したテストでは、
 計算結果も **10.000 µm** となることを確認しました。
 
+![Photonics Router v5.5 straight waveguide length](images/router_v5_5_length_straight.png)
+
 曲線導波路：
 
 ```text
@@ -169,6 +171,8 @@ Length = 10.447 um
 
 Port を上下方向にもずらして Bézier 曲線を生成した場合、
 直線接続より長い **10.447 µm** が得られることを確認しました。
+
+![Photonics Router v5.5 curved waveguide length](images/router_v5_5_length_curved.png)
 
 基本フロー：
 
@@ -220,7 +224,9 @@ klayout-photonics-pdk/
 ├── LICENSE
 ├── images/
 │   ├── router_v5_4_connected.png
-│   └── router_v5_4_segments.png
+│   ├── router_v5_4_segments.png
+│   ├── router_v5_5_length_curved.png
+│   └── router_v5_5_length_straight.png
 ├── pymacros/
 │   ├── photonics_pdk_v4.lym
 │   ├── photonics_router_v5_3_2.lym
