@@ -304,3 +304,24 @@ klayout-photonics-pdk/
 - Euler / Clothoid bends
 - Waveguide types
 - Advanced routing
+
+# License
+
+MIT License
+
+```text
+Copyright (c) 2026 TAKE-HooJoo@SIG
+```
+
+# Disclaimer
+
+This software is provided AS IS. The current PCell dimensions, device
+geometries, routing geometries, and extracted photonic netlists do not
+guarantee manufacturability, optical performance, or reliability for any
+specific Silicon Photonics fabrication process.
+
+# Author
+
+**TAKE-HooJoo@SIG**
+
+Open-Source Silicon Photonics PDK / KLayout PCell Development
