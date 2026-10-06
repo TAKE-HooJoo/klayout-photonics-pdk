@@ -14,8 +14,10 @@ This project uses KLayout's PCell (Parameterized Cell) framework to generate
 basic parametric devices for Silicon Photonics. It also includes a
 **Photonics Router** for interactively connecting optical ports defined by PCells.
 
-Router v6.0 can recognize PCell port names, instances, connectivity, and
-waveguide lengths, and can extract a basic photonic netlist from the layout.
+Router v6.1 inherits the v6.0 Photonic Netlist Extraction flow and introduces
+an explicit data model based on `PhotonicDevice`, `OpticalPort`, and `PhotonicNet`.
+It recognizes PCell port names, instances, connectivity, and waveguide lengths,
+and can extract a basic photonic netlist from the layout.
 
 ## Supported Environment
 
@@ -75,7 +77,8 @@ Extract connectivity and path length
 | v5.4 | Loop suppression + automatic route adjustment | ✅ Verified on KLayout 0.30.9 |
 | v5.5 | Port metadata + waveguide length | ✅ Verified on KLayout 0.30.9 |
 | v5.6 | Connectivity verification | ✅ Verified on KLayout 0.30.9 |
-| **v6.0** | **Photonic Netlist Extraction** | **✅ Verified on KLayout 0.30.9** |
+| v6.0 | Photonic Netlist Extraction | ✅ Verified on KLayout 0.30.9 |
+| **v6.1** | **Photonic Data Model** | **✅ Verified on KLayout 0.30.9** |
 
 ## Router v5.4
 
@@ -88,60 +91,6 @@ retaining port-position and direction recognition.
 
 ## Router v5.5
 
-v5.5 introduces `OpticalPort` metadata and waveguide-length calculation.
-
-Main features:
-
-- Port name / position / direction / width metadata
-- Bézier waveguide path-length calculation
-- Length output in micrometers
-- Routing-completion dialog
-- Python Console output
-
-### Waveguide Length Verification
-
-Straight waveguide:
-
-```text
-Waveguide opt3 -> opt5 created
-Length = 10.000 um
-```
-
-![Photonics Router v5.5 straight waveguide length](images/router_v5_5_length_straight.png)
-
-Curved waveguide:
-
-```text
-Waveguide opt3 -> opt5 created
-Length = 10.447 um
-```
-
-![Photonics Router v5.5 curved waveguide length](images/router_v5_5_length_curved.png)
-
-### Native Port Name / Instance Identification
-
-During development, the router was extended to recognize native PCell port
-names such as `opt1` and `opt2`, and to identify the owning instance.
-
-![Native PCell port names](images/router_v5_5_1_native_ports.png)
-
-![Instance-aware ports](images/router_v5_5_2_instance_ports.png)
-
-## Router v5.6 — Connectivity Verification
-
-v5.6 scans the layout and classifies optical ports as connected or unconnected.
-
-```text
-Connected: 2
-Unconnected: 6
-```
-
-![Photonics Router v5.6 connectivity](images/router_v5_6_connectivity.png)
-
-Multiple connection extraction was also verified during development.
-
-```text
-Connections: 2
 Connected ports: 4
 Unconnected ports: 4
 ```
@@ -209,6 +158,54 @@ PhotonicNet
 Photonic Netlist
 ```
 
+# Photonics Router v6.1 — Photonic Data Model
+
+**Photonics Router v6.1 has been verified on KLayout 0.30.9.**
+
+v6.1 preserves the v6.0 routing behavior and Photonic Netlist Extraction
+while introducing an explicit internal data model for photonic circuits.
+
+```text
+PhotonicDevice
+      |
+      +-- OpticalPort
+               |
+               +-- PhotonicNet
+```
+
+Main additions:
+
+- Added `PhotonicDevice`
+- Added explicit `PhotonicDevice <-> OpticalPort` relationships
+- Added explicit `OpticalPort <-> PhotonicNet` relationships
+- Preserved native PCell port metadata
+- Preserved photonic netlist extraction
+- Preserved waveguide-length extraction
+- Preserved the v6.0 two-click interactive routing behavior
+
+Verified example:
+
+```text
+DEVICES
+  DEVICE SBend[1] TYPE SBend
+  DEVICE SBend[2] TYPE SBend
+
+NETLIST
+  NET NET1
+    PORT SBend[1].opt2
+    PORT SBend[2].opt1
+    LENGTH 13.100 um
+
+UNCONNECTED
+  -- SBend[1].opt1
+  -- SBend[2].opt2
+```
+
+This data model provides the foundation for the v6.2 Bend-aware Router,
+Photonic Verification, and Netlist Export.
+
+![Photonics Router v6.1 Photonic Data Model](images/router_v6_1_photonic_data_model.png)
+
 # Router Basic Parameters
 
 | Parameter | Value | Description |
@@ -226,7 +223,7 @@ Photonic Netlist
 ```text
 ~/.klayout/pymacros/
 ├── photonics_pdk_v4.lym
-└── photonics_router_v6_0.lym
+└── photonics_router_v6_1.lym
 ```
 
 To avoid duplicate Router registration, move unused older versions outside
@@ -248,14 +245,15 @@ klayout-photonics-pdk/
 │   ├── router_v5_5_2_instance_ports.png
 │   ├── router_v5_6_connectivity.png
 │   ├── router_v5_6_two_nets.png
-│   └── router_v6_0_netlist.png
+│   ├── router_v6_0_netlist.png
+│   └── router_v6_1_photonic_data_model.png
 ├── pymacros/
 │   ├── photonics_pdk_v4.lym
 │   ├── photonics_router_v5_3_2.lym
 │   ├── photonics_router_v5_4.lym
 │   ├── photonics_router_v5_5.lym
 │   ├── photonics_router_v5_6.lym
-│   └── photonics_router_v6_0.lym
+│   └── photonics_router_v6_1.lym
 ├── docs/
 ├── examples/
 └── tests/
@@ -263,7 +261,7 @@ klayout-photonics-pdk/
 
 # Development Roadmap
 
-## v6.0
+## v6.0 — Photonic Netlist Extraction
 
 - Device recognition
 - Instance identification
@@ -273,35 +271,36 @@ klayout-photonics-pdk/
 
 **Status: Completed (prototype)**
 
-## Next
+## v6.1 — Photonic Data Model
 
+- `PhotonicDevice`
+- `OpticalPort`
+- `PhotonicNet`
+- Device / Port / Net relationships
+
+**Status: Completed — verified on KLayout 0.30.9**
+
+## v6.2 — Bend-aware Router
+
+- Minimum bend radius
+- Curvature check
+- Bézier route optimization
+
+**Status: Next**
+
+## v6.3 — Photonic Verification
+
+- Unconnected port detection
 - Port width mismatch detection
 - Port orientation mismatch detection
-- Netlist file export
-- Minimum-bend-radius-aware routing
-- Euler / Arc-based routing
-- Obstacle avoidance
-- DRC-aware routing
-- Automatic taper insertion
-- Optical path-length matching
+- Bend-radius violation detection
 
-# License
+## v6.4 — Netlist Export
 
-MIT License
+- Photonic netlist file export
 
-```text
-Copyright (c) 2026 TAKE-HooJoo@SIG
-```
+## v7.0 — Advanced Router
 
-# Disclaimer
-
-This software is provided AS IS. The current PCell dimensions, device
-geometries, routing geometries, and extracted photonic netlists do not
-guarantee manufacturability, optical performance, or reliability for any
-specific Silicon Photonics fabrication process.
-
-# Author
-
-**TAKE-HooJoo@SIG**
-
-Open-Source Silicon Photonics PDK / KLayout PCell Development
+- Euler / Clothoid bends
+- Waveguide types
+- Advanced routing
