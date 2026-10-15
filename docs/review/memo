@@ -1,0 +1,10 @@
+docker run -i -t -v $(pwd):/book kauplan/review2.5 /bin/bash
+
+rake docker:pdf
+
+git add .
+git commit -m "0324"
+git push
+
+白黒印刷
+rake docker:pdf t=pbook
