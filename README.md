@@ -14,10 +14,10 @@ KLayout の PCell（Parameterized Cell）機能を利用して、Silicon Photoni
 向けの基本的な光デバイスをパラメトリックに生成します。また、PCell
 に定義された光ポート間を導波路で接続する **Photonics Router** を開発しています。
 
-現在の Router v6.1 では、v6.0 の Photonic Netlist Extraction を継承し、
-`PhotonicDevice`、`OpticalPort`、`PhotonicNet` の明示的なデータモデルを導入しています。
-PCell のポート名、インスタンス、接続関係、導波路長を認識し、レイアウトから
-基本的な Photonic Netlist を抽出できます。
+Router v6.1 では `PhotonicDevice`、`OpticalPort`、`PhotonicNet` のデータモデルを導入しました。
+**最新の Router v6.4（Phase 3E-6.1）** では、2クリックGUIから導波路レイヤ `1/0` と
+専用障害物レイヤ `90/0` を考慮した CSC / Waypoint 迂回ルーティングを実行できます。
+本機能は KLayout 0.30.9 の統合テストとGUI画面で動作確認済みです。
 
 ## 対応環境
 
@@ -50,6 +50,7 @@ PCell のポート名、インスタンス、接続関係、導波路長を認�
 |---|---|
 | Waveguide | `1/0` |
 | Optical Pin | `2/0` |
+| Obstacle (専用障害物) | `90/0` |
 
 # Photonics Router
 
@@ -79,6 +80,9 @@ PCell のポート名、インスタンス、接続関係、導波路長を認�
 | v5.6 | Connectivity verification | ✅ KLayout 0.30.9 動作確認済み |
 | v6.0 | Photonic Netlist Extraction | ✅ KLayout 0.30.9 動作確認済み |
 | **v6.1** | **Photonic Data Model** | **✅ KLayout 0.30.9 動作確認済み** |
+| v6.2 | Bend-aware CSC / tangent verification | KLayout tests verified |
+| v6.3 | Independent routing engine and KLayout GUI adapter | KLayout GUI verified |
+| **v6.4** | **Obstacle-aware routing, waypoint fallback, `90/0` obstacle layer** | **KLayout integration + GUI verified (prototype)** |
 
 ## Router v5.4
 
@@ -206,6 +210,74 @@ Netlist Export へ発展させるための基盤です。
 
 ![Photonics Router v6.1 Photonic Data Model](images/router_v6_1_photonic_data_model.png)
 
+# Photonics Router v6.4 — 障害物回避（Phase 3E）
+
+v6.4 は KLayout ネイティブの2クリックGUIを維持しながら、既存導波路 `1/0` と
+障害物専用レイヤ `90/0` を認識して迂回経路を生成する試作版です。
+`2/0` は光ポートのPathとラベルに使用します。
+
+## Phase 3E 開発・検証履歴
+
+| Phase | 内容 | 確認状況 |
+|---|---|---|
+| 3E-3 | KLayout Regionによる障害物クリアランス付きCSC探索 | テスト済み |
+| 3E-4 | CSCで迂回できない場合のWaypoint経路探索 | テスト済み |
+| 3E-5 | GDS出力・再読込とクリアランス再検証 | テスト済み |
+| 3E-5.1 | 接線角度・3点曲げ半径診断、G1フィレット試作 | テスト済み（連続曲率の保証ではない） |
+| 3E-6 | GUIルーター統合、経路配置・失敗時非配置 | KLayoutテストPASS |
+| **3E-6.1** | **`90/0`障害物認識、GUI迂回表示** | **KLayoutテスト＋GUI確認済み** |
+
+### 実測例：Waypoint迂回
+
+KLayout 0.30.9、DBU = `0.001 µm`、導波路幅 `0.5 µm`、
+要求最小曲げ半径 `5.0 µm` の検証例です。
+
+| 項目 | 結果 |
+|---|---:|
+| 光ポート間隔 | 80 µm |
+| 障害物 | `90/0`、中央の矩形（x=37–43 µm、y=-3–3 µm） |
+| 経路 | `WAYPOINT_CSC` |
+| 経路長 | 82.056 µm |
+| サンプル点数 | 148 |
+| 設計／3点近似最小曲げ半径 | 6.250 / 6.250 µm |
+| 最大ポリライン方向変化 | 0.442939° |
+| GUIでの両端接線誤差 | 約0.221° |
+| 独立クリアランス確認 | PASS |
+
+GUIでは、2つの未接続光ポートを選択し、中央の `90/0` 障害物の上側を迂回する
+経路を確認しました。テストでは導波路レイヤへのPolygon配置と、
+迂回経路が見つからない場合にレイアウトを変更しない **fail-closed** 動作も確認しています。
+
+### インストールとテスト
+
+リポジトリのルートで実行します。
+
+```bash
+python3 -m unittest discover -s tests -p 'test_route_continuity.py' -v
+klayout -b -r tests/test_klayout_smooth_waypoint.py
+klayout -b -r tests/test_router_v64_klayout.py
+klayout -b -r tests/test_router_v64_obstacle_layer.py
+cp pymacros/photonics_router_v6_4.lym ~/.klayout/pymacros/
+```
+
+マクロをコピーした後、KLayoutを完全に再起動してください。
+旧Routerマクロの重複登録に注意してください。
+
+### 現時点の制限と次の開発
+
+- 現状の曲率評価はサンプル点による近似です。厳密なG1/G2連続性や製造可能性は保証しません。
+- ポート接続部の障害物処理は試作段階です。完全なPDK DRCではありません。
+- Polygonで配置した経路のPhotonic Netlist抽出は今後の対応項目です。
+- **Phase 3E-7（予定）:** 接続部の接線・曲率プロファイル、自己交差、GDS形状精度の評価。
+- **Phase 3E-8（予定）:** Polygon導波路を含むPhotonic Netlist統合。
+
+### GitHub 開発履歴
+
+- `1c75db5` — Waypoint obstacle avoidance
+- `e3ff675` — GDS export and visualization
+- `6ab87c6` — Obstacle-layer-aware Photonics Router v6.4
+- `e762712` — Route continuity and G1 fillet diagnostics
+
 # Router 基本パラメータ
 
 | Parameter | Value | 内容 |
@@ -217,13 +289,15 @@ Netlist Export へ発展させるための基盤です。
 | `NPTS` | `96` | Bézier 曲線の分割点数 |
 | `WG_LAYER` | `1/0` | 導波路レイヤ |
 | `PIN_LAYER` | `2/0` | 光ポートレイヤ |
+| `OBSTACLE_LAYER` | `90/0` | 障害物専用レイヤ（v6.4） |
 
 # インストール
 
 ```text
 ~/.klayout/pymacros/
 ├── photonics_pdk_v4.lym
-└── photonics_router_v6_1.lym
+├── photonics_router_v6_1.lym
+└── photonics_router_v6_4.lym
 ```
 
 旧Routerとの重複登録を避ける場合は、使用しない旧バージョンを
@@ -253,7 +327,8 @@ klayout-photonics-pdk/
 │   ├── photonics_router_v5_4.lym
 │   ├── photonics_router_v5_5.lym
 │   ├── photonics_router_v5_6.lym
-│   └── photonics_router_v6_1.lym
+│   ├── photonics_router_v6_1.lym
+│   └── photonics_router_v6_4.lym
 ├── docs/
 ├── examples/
 └── tests/
@@ -282,22 +357,27 @@ klayout-photonics-pdk/
 
 ## v6.2 — Bend-aware Router
 
-- Minimum bend radius
-- Curvature check
-- Bézier route optimization
+- CSC経路探索、最小曲げ半径、接線角度の検証
 
-**Status: Next**
+**Status: 実装・検証済み（プロトタイプ）**
 
-## v6.3 — Photonic Verification
+## v6.3 — RoutingEngine / KLayout Adapter
 
-- Unconnected port detection
-- Port width mismatch detection
-- Port orientation mismatch detection
-- Bend-radius violation detection
+- 独立したRoutingEngineとGUIアダプター
 
-## v6.4 — Netlist Export
+**Status: 実装・検証済み（プロトタイプ）**
 
-- Photonic netlist file export
+## v6.4 — Obstacle-aware Router
+
+- `1/0`導波路と`90/0`専用障害物を認識
+- CSC / Waypoint迂回、クリアランス検証、fail-closed配置
+
+**Status: Phase 3E-6.1までKLayout統合テスト・GUI確認済み**
+
+## Phase 3E-7 / 3E-8（予定）
+
+- 曲率・接線連続性の品質評価
+- Polygon導波路のPhotonic Netlist統合
 
 ## v7.0 — Advanced Router
 
