@@ -11,6 +11,7 @@ from photonics.routing.result import RouteResult
 from photonics.routing.geometry import length, min_radius, tangent_errors, unit
 from photonics.routing.continuity import sharp_corners
 from photonics.routing.euler_endpoint_solver import route_straight_euler_straight
+from photonics.routing.euler_sbend import route_euler_sbend
 from photonics.integration.obstacle_router_v2 import route_with_waypoints
 from photonics.integration.obstacle_router import route_region
 from photonics.integration.clearance_klayout import waveguide_region, check_route_clearance
@@ -36,6 +37,20 @@ def _euler_candidate(a, b, src, dst, radius, samples):
     e0, e1 = tangent_errors(pts, src, dst)
     return RouteResult(pts, length(pts), radius, min_radius(pts),
                        e0, e1, True, 'EULER')
+
+
+def _sbend_candidate(a, b, src, dst, radius, samples):
+    # Port directions are outward; arrival travel heading is -dst.
+    r = route_euler_sbend(
+        (a.x, a.y), (b.x, b.y), _heading(src),
+        _heading((-dst[0], -dst[1])), min_radius_um=radius,
+        samples_per_bend=max(5, (samples + 1) // 2))
+    if not r.valid:
+        return _failure(r.reason)
+    pts = tuple(Point(x, y) for x, y in r.points)
+    e0, e1 = tangent_errors(pts, src, dst)
+    return RouteResult(pts, length(pts), radius, min_radius(pts),
+                       e0, e1, True, 'EULER_SBEND')
 
 
 def route_between_ports_hybrid(cell, layout, source, destination, xs, rules,
@@ -85,10 +100,12 @@ def route_between_ports_hybrid(cell, layout, source, destination, xs, rules,
         obstacles += pya.Region(cell.begin_shapes_rec(keepout_index)).merged()
     obstacles.merge()
     radius_limit = max(xs.min_bend_radius_um, rules.min_bend_radius_um)
-    attempts = ('EULER', 'CSC') if mode == 'AUTO' else (mode,)
+    attempts = ('SBEND', 'EULER', 'CSC') if mode == 'AUTO' else (('SBEND', 'EULER') if mode == 'EULER' else ('CSC',))
     last_reason = 'NO_VALID_ROUTE'
     for name in attempts:
-        if name == 'EULER':
+        if name == 'SBEND':
+            candidate = _sbend_candidate(a, b, src, dst, radius_limit, samples)
+        elif name == 'EULER':
             candidate = _euler_candidate(a, b, src, dst, radius_limit, samples)
         else:
             candidate = route_with_waypoints(a, b, src, dst, xs, rules,
@@ -128,5 +145,5 @@ def route_between_ports_hybrid(cell, layout, source, destination, xs, rules,
         cell.shapes(layout.layer(waveguide_layer)).insert(geometry)
         return RouteResult(tuple(pts), length(pts), candidate.designed_radius_um,
                            sampled_radius, e0, e1, True,
-                           ('EULER' if name == 'EULER' else candidate.variant))
+                           ('EULER_SBEND' if name == 'SBEND' else ('EULER' if name == 'EULER' else candidate.variant)))
     return _failure(last_reason)
