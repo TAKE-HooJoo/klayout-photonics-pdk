@@ -12,6 +12,7 @@ from photonics.routing.geometry import length, min_radius, tangent_errors, unit
 from photonics.routing.continuity import sharp_corners
 from photonics.routing.euler_endpoint_solver import route_straight_euler_straight
 from photonics.routing.euler_sbend import route_euler_sbend
+from photonics.routing.route_quality import evaluate_route_quality
 from photonics.integration.obstacle_router_v2 import route_with_waypoints
 from photonics.integration.obstacle_router import route_region
 from photonics.integration.clearance_klayout import waveguide_region, check_route_clearance
@@ -64,7 +65,7 @@ def route_between_ports_hybrid(cell, layout, source, destination, xs, rules,
     """
     import pya
     mode = str(mode).upper()
-    if mode not in ('CSC', 'EULER', 'AUTO'):
+    if mode not in ('CSC', 'EULER', 'AUTO', 'AUTO_QUALITY'):
         raise ValueError('INVALID_MODE')
     if not rules.validate_cross_section(xs):
         raise ValueError('INVALID_CROSS_SECTION')
@@ -100,7 +101,8 @@ def route_between_ports_hybrid(cell, layout, source, destination, xs, rules,
         obstacles += pya.Region(cell.begin_shapes_rec(keepout_index)).merged()
     obstacles.merge()
     radius_limit = max(xs.min_bend_radius_um, rules.min_bend_radius_um)
-    attempts = ('SBEND', 'EULER', 'CSC') if mode == 'AUTO' else (('SBEND', 'EULER') if mode == 'EULER' else ('CSC',))
+    attempts = ('SBEND', 'EULER', 'CSC') if mode in ('AUTO', 'AUTO_QUALITY') else (('SBEND', 'EULER') if mode == 'EULER' else ('CSC',))
+    accepted = []
     last_reason = 'NO_VALID_ROUTE'
     for name in attempts:
         if name == 'SBEND':
@@ -141,9 +143,32 @@ def route_between_ports_hybrid(cell, layout, source, destination, xs, rules,
         if not ok or not (geometry & obstacles).is_empty():
             last_reason = 'ROUTE_CLEARANCE'
             continue
-        # All candidates were evaluated without modifying the layout.
-        cell.shapes(layout.layer(waveguide_layer)).insert(geometry)
-        return RouteResult(tuple(pts), length(pts), candidate.designed_radius_um,
-                           sampled_radius, e0, e1, True,
-                           ('EULER_SBEND' if name == 'SBEND' else ('EULER' if name == 'EULER' else candidate.variant)))
+        # No layout mutation until the chosen candidate is known.
+        result = RouteResult(tuple(pts), length(pts), candidate.designed_radius_um,
+                             sampled_radius, e0, e1, True,
+                             ('EULER_SBEND' if name == 'SBEND' else ('EULER' if name == 'EULER' else candidate.variant)))
+        if mode != 'AUTO_QUALITY':
+            cell.shapes(layout.layer(waveguide_layer)).insert(geometry)
+            return result
+        try:
+            quality = evaluate_route_quality(pts)
+        except ValueError:
+            last_reason = 'INVALID_QUALITY_GEOMETRY'
+            continue
+        accepted.append((result, geometry, quality))
+    if mode == 'AUTO_QUALITY' and accepted:
+        # Normalize by the best candidate in this set. Both terms are
+        # dimensionless; equal weights are a provisional geometric heuristic.
+        # The polygonal energy is sampling-dependent, NOT optical loss.
+        length_ref = min(item[2].length_um for item in accepted)
+        energy_ref = max(item[2].curvature_energy_inv_um for item in accepted)
+        def score(item):
+            q = item[2]
+            energy_term = (q.curvature_energy_inv_um / energy_ref
+                           if energy_ref > 0 else 0.0)
+            return (q.length_um / length_ref + energy_term,
+                    q.length_um, item[0].variant)
+        chosen = min(accepted, key=score)
+        cell.shapes(layout.layer(waveguide_layer)).insert(chosen[1])
+        return chosen[0]
     return _failure(last_reason)
