@@ -133,12 +133,13 @@ class HybridRouterFactory(pya.PluginFactory):
         return HybridRouter(self.mode)
 
 
-# Three independent toolbar tools provide explicit, persistent mode selection.
+# Four independent toolbar tools provide explicit, persistent mode selection.
 # Keep factory objects alive for the lifetime of the macro.
 _hybrid_router_factories = [
     HybridRouterFactory('AUTO', 'photonics_router_v6_5_auto', -1011),
     HybridRouterFactory('CSC', 'photonics_router_v6_5_csc', -1012),
     HybridRouterFactory('EULER', 'photonics_router_v6_5_euler', -1013),
+    HybridRouterFactory('AUTO_QUALITY', 'photonics_router_v6_5_auto_quality', -1014),
 ]
 '''
 
