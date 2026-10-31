@@ -13,3 +13,9 @@ __pycache__/
 .idea/
 .DS_Store
 *~
+
+# Generated phase audit outputs
+tests/phase*_output/
+
+# Local phase distribution archives
+Phase3E_*.zip
